@@ -1,0 +1,8 @@
+# requirements.txt
+tensorflow
+keras
+librosa
+numpy
+pandas
+matplotlib
+gradio
