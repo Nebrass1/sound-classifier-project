@@ -4,7 +4,7 @@ venv/
 __pycache__/
 *.pyc
 # Ignorer le modèle (trop gros pour GitHub sans Git LFS)
-*.h5
+#*.h5
 # Ignorer les dossiers de données et spectrogrammes qui seront très grands
 data/
 spectrograms/
