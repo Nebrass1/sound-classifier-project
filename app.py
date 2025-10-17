@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import os
 import io
 import json
+from PIL import Image
 
 # --- Paramètres du modèle (DOIVENT correspondre à ceux de l'entraînement) ---
 MODEL_PATH = 'sound_classifier_model.h5'
@@ -39,7 +40,7 @@ except Exception as e:
 def audio_to_spectrogram_for_prediction(audio_path):
     """
     Convertit un fichier audio en spectrogramme Mel, prêt pour la prédiction,
-    et retourne l'image binaire pour l'affichage.
+    et retourne l'objet Image PIL pour l'affichage.
     """
     if not audio_path:
         return None, None
@@ -65,10 +66,14 @@ def audio_to_spectrogram_for_prediction(audio_path):
     plt.savefig(spectrogram_buf, format='png', bbox_inches='tight', pad_inches=0, dpi=100)
     plt.close()
 
-    # 2. Traitement de l'image pour le modèle
-    spectrogram_buf.seek(0) # Remet le curseur au début du buffer
+    # NOUVEAU: Convertir le buffer d'octets en objet Image PIL pour la compatibilité Gradio
+    spectrogram_buf.seek(0)
+    spectrogram_image = Image.open(spectrogram_buf).convert("RGB") # Charge et convertit en PIL Image
+    
+    # 2. Traitement de l'image pour le modèle (conversion en tableau numpy redimensionné)
     try:
-        img = tf.keras.utils.load_img(spectrogram_buf, target_size=IMAGE_SIZE)
+        # Redimensionnement de l'image PIL pour la rendre compatible avec l'entrée du modèle (100x100)
+        img = spectrogram_image.resize(IMAGE_SIZE)
         img_array = tf.keras.utils.img_to_array(img)
         img_array = np.expand_dims(img_array, axis=0)
         img_array /= 255.0 # Normalisation
@@ -76,7 +81,7 @@ def audio_to_spectrogram_for_prediction(audio_path):
         print(f"Erreur lors du traitement de l'image pour la prédiction: {e}")
         return None, None
     
-    return spectrogram_buf, img_array 
+    return spectrogram_image, img_array 
 
 def classify_sound(audio_input):
     """Fonction principale de classification appelée par Gradio."""
@@ -87,10 +92,11 @@ def classify_sound(audio_input):
     if audio_input is None:
         return "Veuillez télécharger un fichier audio.", None
     
-    spectrogram_buf, processed_image = audio_to_spectrogram_for_prediction(audio_input)
+    # audio_input est un chemin de fichier temporaire fourni par Gradio
+    spectrogram_image, processed_image = audio_to_spectrogram_for_prediction(audio_input)
     
     if processed_image is None:
-        return "Impossible de traiter l'audio ou fichier vide.", None
+        return "Impossible de traiter l'audio ou fichier vide.", spectrogram_image
 
     # Prédiction
     predictions = model.predict(processed_image, verbose=0)[0]
@@ -101,7 +107,7 @@ def classify_sound(audio_input):
     # Formatage de la sortie
     result = f"## **Prédiction : {predicted_class_label.upper()}**\n\nConfiance : {confidence:.2f}%\n"
     
-    return result, spectrogram_buf
+    return result, spectrogram_image
 
 
 # 2. Définition de l'Interface Gradio
@@ -110,13 +116,14 @@ iface = gr.Interface(
     inputs=gr.Audio(type="filepath", label="Téléchargez un fichier audio (.wav, .mp3, etc.)"),
     outputs=[
         gr.Markdown(label="Résultat de la Classification"), 
-        gr.Image(type="bytes", label="Spectrogramme généré", width=400, height=400)
+        # CORRECTION ICI: type="pil" pour la compatibilité avec la version Gradio sur le Space
+        gr.Image(type="pil", label="Spectrogramme généré", width=400, height=400)
     ],
     title="Service Cloud de Classification de Sons (Transfer Learning)",
-    description="Ce service utilise MobileNetV2 entraîné par Transfer Learning sur les spectrogrammes du dataset ESC-50 pour identifier le type de son.",
+    description="Ce service utilise MobileNetV2 entraîné par Transfer Learning sur les spectrogrammes du dataset ESC-50 pour identifier le type de son (chien, chat, pluie, klaxon...).",
     examples=[] 
 )
 
-# 3. Lancement Local pour Test
+# 3. Lancement
 if __name__ == "__main__":
     iface.launch()
